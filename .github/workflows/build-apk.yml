@@ -22,9 +22,7 @@ jobs:
     - name: Build APK in Docker (kivy/buildozer)
     run: |
       docker run --rm \
-        -v "${{ github.workspace }}":/home/user/hostcwd \
-        -w /home/user/hostcwd \
-        kivy/buildozer:latest \
+        -v "${{ github.workspace }}":/home/user/hostcwd -w /home/user/hostcwd kivy/buildozer:latest \
         bash -lc "buildozer -v android debug"
 
     - name: Upload APK artifact
