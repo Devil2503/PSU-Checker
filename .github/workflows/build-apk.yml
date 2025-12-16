@@ -51,9 +51,7 @@ jobs:
           run: |
             docker run --rm \
             --entrypoint bash \
-            -v "${{ github.workspace }}":/home/user/hostcwd \
-            -w /home/user/hostcwd \
-      kivy/buildozer:latest \
+            -v "${{ github.workspace }}":/home/user/hostcwd -w /home/user/hostcwd kivy/buildozer:latest \
             -lc "buildozer -v android debug"
 
         - name: Build debug APK
