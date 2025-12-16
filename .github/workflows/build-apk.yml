@@ -1,35 +1,67 @@
-name: Build Android APK (Kivy Docker)
+# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+name: Build Android APK (Kivy)
 
-jobs:
-  build-apk:
-    runs-on: ubuntu-latest
+on: 
+    push:
+        branches: [ main ]
+    workflow_dispatch:
 
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+jobs: 
+    build-apk: 
+        runs-on: ubuntu-22.04
 
-    - name: Set up Docker (ensure available)
-      uses: docker/setup-buildx-action@v2
+        steps:
+        - name: Checkout repository
+          uses: actions/checkout@v4
 
-    - name: Pull Kivy/Buildozer image
-      run: docker pull kivy/buildozer:latest
+        - name: Set up Python
+          uses: actions/setup-python@v5
+          with:
+              python-version: '3.10'
 
-    - name: Build APK in Docker (kivy/buildozer)
-      run: |
-        docker run --rm \
-          --entrypoint bash \
-          -v "${{ github.workspace }}":/home/user/hostcwd \
-          -w /home/user/hostcwd \
-          kivy/buildozer:latest \
-          -lc "buildozer -v android debug"
+        - name: Install system dependencies
+          run: |
+              sudo apt update
+              sudo apt install -y \
+                   build-essential \
+                   git \
+                   zip \
+                   unzip \
+                   openjdk-17-jdk \
+                   python3-pip \
+                   python3-setuptools \
+                   python3-wheel \
+                   libffi-dev \
+                   libssl-dev
 
-    - name: Upload APK artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: PSU-Checker-APK
-        path: bin/*.apk
+        - name: Install Buildozer and Cython
+          run: |
+             pip install --upgrade pip
+             pip install buildozer cython
+
+        - name: Initialize Buildozer (if not exists)
+          run: |
+              if [ ! -f buildozer.spec ]; then
+                buildozer init
+              fi
+
+        - name: Build APK in Docker (kivy/buildozer)
+          run: |
+             docker run --rm \
+             --entrypoint bash \
+             -v "${{ github.workspace }}":/home/user/hostcwd \
+             -w /home/user/hostcwd \
+      kivy/buildozer:latest \
+             -lc "buildozer -v android debug"
+
+        - name: Build debug APK
+          run: |
+            buildozer -v android debug
+
+        - name: Upload APK artifact
+          uses: actions/upload-artifact@v4
+          with:
+              name: PSU-Checker-APK
+              path: bin/*.apk
