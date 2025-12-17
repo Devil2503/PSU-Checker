@@ -1,23 +1,32 @@
 name: Build APK
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main ]
-  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      BUILD_TOOLS_VERSION: "34.0.0"
-      COMPILE_SDK_VERSION: "34"
-      NDK_VERSION: "25.1.8937393"
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      # Фиксированные версии для стабильности
+      COMPILE_SDK_VERSION: "34"
+      BUILD_TOOLS_VERSION: "34.0.0"
+      NDK_VERSION: "25.1.8937393"
+      # Важно: используем Python 3.10 вместо 3.11 для лучшей совместимости
+      PYTHONVER: "3.10"
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      
+    - name: Setup Python ${{ env.PYTHONVER }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHONVER }}
+        cache: 'pip'
 
     - name: Setup JDK 17
       uses: actions/setup-java@v4
@@ -33,135 +42,125 @@ jobs:
           libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
           libsqlite3-dev libbz2-dev libffi-dev libssl-dev libtool autoconf \
           libtool-bin pkg-config libpng-dev libxml2-dev libxslt1-dev libz-dev \
-          cmake make g++ libncurses6
+          cmake make g++ libncurses6 zlib1g-dev libcurl4-openssl-dev
 
     - name: Install Python dependencies
       run: |
-        pip3 install --user --upgrade cython==0.29.33 buildozer virtualenv
+        pip install --upgrade pip
+        pip install cython==0.29.33 buildozer virtualenv
 
     - name: Add tools to PATH
       run: |
         echo "$HOME/.local/bin" >> $GITHUB_PATH
-        echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
-
-    - name: Cache .buildozer
-      uses: actions/cache@v4
-      with:
-        path: ~/.buildozer
-        key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
+        echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
+        echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
 
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
       with:
-        packages: "platform-tools platforms;android-34 build-tools;34.0.0 ndk;25.1.8937393 cmake;3.22.1"
+        packages: |
+          platform-tools
+          platforms;android-34
+          build-tools;34.0.0
+          ndk;25.1.8937393
+          cmake;3.22.1
         accept-android-sdk-licenses: true
         log-accepted-android-sdk-licenses: true
 
-    
-    - name: Accept Android licenses properly
+    - name: Accept Android licenses manually
       run: |
         yes | sdkmanager --licenses >/dev/null 2>&1 || true
-        ( sleep 5 && while [ 1 ]; do sleep 1; echo "y"; done ) | sdkmanager --licenses >/dev/null 2>&1 || true
         mkdir -p "$ANDROID_HOME/licenses" || true
-        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$ANDROID_HOME/licenses/android-sdk-license" || true
-        echo "84831b9409646a918e30573bab4c9c91346d8abd" > "$ANDROID_HOME/licenses/android-sdk-preview-license" || true
-        echo "504667f4c0de7af1a06de9f4b1727b84351f2910" > "$ANDROID_HOME/licenses/intel-android-extra-license" || true
-        echo "d975f751698a77b662f12587c1379f82526f5762" > "$ANDROID_HOME/licenses/mips-android-sysimage-license" || true
-      env:
-        ANDROID_HOME: /usr/local/lib/android/sdk
-        PATH: $PATH:/usr/local/lib/android/sdk/cmdline-tools/latest/bin:/usr/local/lib/android/sdk/platform-tools
-
+        echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$ANDROID_HOME/licenses/android-sdk-license"
+        echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
 
     - name: Clear previous builds
-      run: |
-        rm -rf .buildozer bin
-        mkdir -p bin
+      run: rm -rf .buildozer bin
 
-    - name: Build APK with detailed logging
+    - name: Show environment info
+      run: |
+        echo "=== Environment Info ==="
+        python --version
+        pip --version
+        cython --version
+        buildozer --version
+        echo "ANDROID_HOME=$ANDROID_HOME"
+        echo "Available NDK versions:"
+        ls -la $ANDROID_HOME/ndk || echo "No NDK directory"
+        sdkmanager --list_installed | grep -E "(ndk|platforms;android-34|build-tools)" || echo "SDK manager not available"
+
+    - name: Initialize Buildozer
+      run: |
+        echo "=== Initializing Buildozer ==="
+        buildozer init
+        cat buildozer.spec | grep -v "^#" | grep -v "^$"
+
+    - name: Debug Buildozer config
+      run: |
+        echo "=== Debugging Buildozer config ==="
+        buildozer --verbose android debug --no-compile || true
+        echo "=== Buildozer config status: $?"
+
+    - name: Build APK with extreme verbosity
       id: build_apk
       run: |
-        echo "=== Starting Buildozer with verbose logging ==="
-        buildozer -v android debug
-        echo "=== Buildozer finished with exit code $? ==="
+        echo "=== STARTING FULL APK BUILD ==="
+        set -x  # Включить детальное логирование всех команд
+        buildozer --verbose android debug
+        set +x
+        echo "=== BUILD COMPLETED WITH EXIT CODE $? ==="
         
-        echo "=== Checking for APK files after build ==="
-        find . -name "*.apk" -type f -exec ls -la {} \;
-        echo "=== Contents of bin directory ==="
-        ls -la bin/ || echo "bin/ directory is empty or missing"
-        echo "=== Buildozer dist directory ==="
-        ls -la .buildozer/android/platform/build-*-*/dists/ 2>/dev/null || echo "No dist directory found"
-      continue-on-error: true
+        # Проверяем наличие файлов после сборки
+        echo "=== FILE STRUCTURE AFTER BUILD ==="
+        find . -name "*.apk" -exec ls -la {} \; || echo "No APK files found"
+        echo "=== BIN DIRECTORY CONTENTS ==="
+        ls -la bin/ || echo "bin/ directory empty"
+        echo "=== BUILDOZER PLATFORM STRUCTURE ==="
+        find .buildozer/android/platform -maxdepth 3 -type d || echo "No platform structure"
 
-    - name: Save build logs for debugging
+    - name: Save ALL build files for debugging
       uses: actions/upload-artifact@v4
       with:
-        name: build-logs-${{ github.run_number }}
+        name: full-build-debug-${{ github.run_number }}
         path: |
-          .buildozer/
-          .buildozer/android/platform/python-for-android/*.log
-          .buildozer/android/platform/python-for-android/build/bootstrap_builds/
-          .buildozer/android/platform/build-*-*/other_builds/
+          ./.buildozer
+          ./bin
+          ./*.log
+          ./buildozer.spec
         retention-days: 7
       if: always()
 
-    - name: Comprehensive APK search
+    - name: Final APK search and upload
       id: find_apk
       run: |
-        echo "🔍 COMPREHENSIVE APK SEARCH"
-        FOUND=0
-        
+        echo "🔍 FINAL APK SEARCH"
         APK_PATH=$(find . -name "*.apk" -type f 2>/dev/null | head -1)
-        if [ -n "$APK_PATH" ]; then
-          FOUND=1
-          echo "✅ FOUND in standard search: $APK_PATH"
-          echo "APK_PATH=$APK_PATH" >> $GITHUB_OUTPUT
-        fi
         
-        declare -a APK_PATHS=(
-          "bin/*.apk"
-          ".buildozer/android/platform/build-*-*/dists/*/*.apk"
-          ".buildozer/android/platform/build-*-*/dists/*/bin/*.apk"
-          ".buildozer/android/app/build/outputs/apk/debug/*.apk"
-          ".buildozer/android/app/build/outputs/apk/*.apk"
-          ".buildozer/android/platform/python-for-android/dist/*.apk"
-        )
-        
-        for path in "${APK_PATHS[@]}"; do
-          if [ -n "$(ls -1 $path 2>/dev/null)" ]; then
-            FOUND=1
-            APK_PATH=$(ls -1 $path | head -1)
-            echo "✅ FOUND in explicit path: $APK_PATH"
-            echo "APK_PATH=$APK_PATH" >> $GITHUB_OUTPUT
-            break
-          fi
-        done
-        
-        if [ $FOUND -eq 0 ]; then
-          echo "❌ NO APK FILE FOUND AFTER BUILD"
-          echo "📋 CRITICAL DIAGNOSTICS:"
-          
-          if [ -d ".buildozer/android/platform/python-for-android" ]; then
-            echo "🏗️ Python-for-android status:"
-            ls -la .buildozer/android/platform/python-for-android/ | grep -E "(dist|build|bin)"
-            
-            echo "📝 Last 50 lines of build log:"
-            tail -50 .buildozer/android/platform/build-*-*/other_builds/bootstrap_builds/sdl2-python3/armeabi-v7a/logs/build.txt 2>/dev/null || echo "No build logs found"
-          fi
-          
-          echo "🔧 Android SDK/NDK status:"
-          sdkmanager --list_installed | grep -E "(ndk|platforms;android|build-tools)" || echo "SDK manager not available"
-          
+        if [ -z "$APK_PATH" ]; then
+          echo "❌ CRITICAL: Still no APK file found!"
+          echo "Possible causes:"
+          echo "1. Buildozer configuration error"
+          echo "2. Python-for-android bootstrap failure"
+          echo "3. Missing dependencies in build environment"
+          echo "4. Version incompatibility between components"
+          echo ""
+          echo "Check the 'full-build-debug' artifact for detailed logs"
           exit 1
-        else
-          echo "✅ Final APK path: $APK_PATH"
-          echo "APK_NAME=$(basename "$APK_PATH")" >> $GITHUB_OUTPUT
         fi
+        
+        echo "✅ FOUND APK AT: $APK_PATH"
+        echo "APK_PATH=$APK_PATH" >> $GITHUB_OUTPUT
+        echo "APK_SIZE=$(du -h $APK_PATH | cut -f1)" >> $GITHUB_OUTPUT
+        
+        # Копируем APK в корень для удобства
+        mkdir -p release
+        cp "$APK_PATH" release/
+        echo "Copied APK to release/ directory"
 
-
-    - name: Upload APK artifact
+    - name: Upload final APK
       uses: actions/upload-artifact@v4
       with:
-        name: psuchecker-final-apk-${{ github.run_number }}
-        path: ${{ steps.find_apk.outputs.APK_PATH }}
+        name: psuchecker-apk-${{ github.run_number }}
+        path: release/*.apk
         retention-days: 30
       if: always()
