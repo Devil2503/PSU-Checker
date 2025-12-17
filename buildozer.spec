@@ -5,14 +5,16 @@ package.domain = org.test
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas
 version = 1.0
-requirements = python3,kivy==2.2.1
+requirements = python3,kivy==2.2.1,android
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET
+
+android.arch → android.archs
+android.archs = arm64-v8a
 android.api = 34
 android.minapi = 24
 android.ndk = 25b
-android.arch = arm64-v8a
 android.enable_backup = True
 
 [buildozer]
