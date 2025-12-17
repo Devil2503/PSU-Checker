@@ -58,5 +58,5 @@ class PSUCheckerApp(App):
         self.title = 'PSU Checker'
         return MainLayout()
 
-if __name__ == 'main':
+if __name__ == '__main__':
     PSUCheckerApp().run()
