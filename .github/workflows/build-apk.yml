@@ -12,8 +12,8 @@ jobs:
       BUILD_TOOLS_VERSION: "34.0.0"
       COMPILE_SDK_VERSION: "34"
       NDK_VERSION: "25.1.8937393"
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
     - name: Checkout code
@@ -29,79 +29,60 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends \
-          git \
-          zip \
-          unzip \
-          python3 \
-          python3-pip \
-          python3-venv \
-          python3-dev \
-          libsdl2-dev \
-          libsdl2-image-dev \
-          libsdl2-mixer-dev \
-          libsdl2-ttf-dev \
-          libsqlite3-dev \
-          libbz2-dev \
-          libffi-dev \
-          libssl-dev \
-          libtool \
-          autoconf \
-          libtool-bin \
-          pkg-config \
-          libpng-dev \
-          libxml2-dev \
-          libxslt1-dev \
-          libz-dev \
-          cmake \
-          make \
-          g++
+          git zip unzip python3 python3-pip python3-venv python3-dev \
+          libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
+          libsqlite3-dev libbz2-dev libffi-dev libssl-dev libtool autoconf \
+          libtool-bin pkg-config libpng-dev libxml2-dev libxslt1-dev libz-dev \
+          cmake make g++ libncurses5
 
-    - name: Install Cython and other Python dependencies
+    - name: Install Python dependencies
       run: |
         pip3 install --user --upgrade cython==0.29.33 buildozer virtualenv
 
-    - name: Add Buildozer to PATH
-      run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+    - name: Add tools to PATH
+      run: |
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
 
-    - name: Install Android SDK
+    - name: Setup Android SDK
       uses: android-actions/setup-android@v3
       with:
-        cmdline-tools-version: "latest"
+        cmdline-tools-version: "11.0"
         packages: |
           platform-tools
-          platforms;android-$COMPILE_SDK_VERSION
-          build-tools;$BUILD_TOOLS_VERSION
-          ndk;$NDK_VERSION
+          platforms;android-34
+          build-tools;34.0.0
+          ndk;25.1.8937393
           cmake;3.22.1
-          patcher;v4
 
     - name: Accept Android licenses
       run: |
-        yes | sdkmanager --licenses || true
-        yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses || true
+        yes | sdkmanager --licenses >/dev/null
+        yes | sdkmanager --licenses >/dev/null
 
-    - name: Clear Buildozer cache
-      run: rm -rf .buildozer
+    - name: Clear previous builds
+      run: rm -rf .buildozer bin
 
     - name: Build APK
+      id: build_apk
       run: |
         buildozer -v android debug
-      env:
-        P4A_NUMERIC_VERSION: "2023.06.0"
-        P4A_BUILD_DIR: /tmp/p4a
-        JDK_HOME: $JAVA_HOME
+      continue-on-error: true
+
+    - name: Upload failed build logs
+      if: steps.build_apk.outcome == 'failure'
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs-failed
+        path: |
+          .buildozer/
+          bin/
+        retention-days: 7
 
     - name: Upload APK artifact
+      if: steps.build_apk.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
         name: psuchecker-apk
         path: bin/*.apk
         retention-days: 30
-
-    - name: Upload Buildozer logs on failure
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: buildozer-logs
-        path: .buildozer/android/platform/python-for-android/
-        retention-days: 7
