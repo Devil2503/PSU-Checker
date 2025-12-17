@@ -62,7 +62,13 @@ jobs:
 
     - name: Clear previous builds
       run: rm -rf .buildozer bin
-
+    - name: Debug environment
+      run: |
+        echo "Python version: $(python3 --version)"
+        echo "Cython version: $(cython --version)"
+        echo "Buildozer version: $(buildozer --version)"
+        echo "Android SDK path: $ANDROID_HOME"
+        sdkmanager --list_installed
     - name: Build APK
       id: build_apk
       run: |
