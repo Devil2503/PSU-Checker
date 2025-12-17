@@ -50,15 +50,17 @@ jobs:
         path: ~/.buildozer
         key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
 
-    - name: Setup Android SDK
+        - name: Setup Android SDK
       uses: android-actions/setup-android@v3
       with:
         packages: |
           platform-tools
           platforms;android-34
           build-tools;34.0.0
-          ndk;25.1.8937393
+          ndk;25.1
           cmake;3.22.1
+        accept-android-sdk-licenses: true
+        log-accepted-android-sdk-licenses: true
 
     - name: Accept Android licenses
       run: |
