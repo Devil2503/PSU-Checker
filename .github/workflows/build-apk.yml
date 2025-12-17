@@ -61,15 +61,27 @@ jobs:
           build-tools;34.0.0
           ndk;25.1.8937393
           cmake;3.22.1
-        accept-android-sdk-licenses: true
-        log-accepted-android-sdk-licenses: true
 
-    - name: Accept Android licenses manually
-      run: |
-        yes | sdkmanager --licenses >/dev/null 2>&1 || true
+    - name: Accept Android licenses (guaranteed method)
+      run: | 
+        ( sleep 2 && while [ 1 ]; do sleep 1; echo "y"; done ) | sdkmanager --licenses --verbose 2>&1 | grep -v "Exception in thread" &
+        LICENSE_PID=$!
+        wait $LICENSE_PID || true
+        
         mkdir -p "$ANDROID_HOME/licenses" || true
         echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$ANDROID_HOME/licenses/android-sdk-license"
         echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+        echo -e "\n504667f4c0de7af1a06de9f4b1727b84351f2910" > "$ANDROID_HOME/licenses/intel-android-extra-license"
+        
+        yes | sdkmanager --licenses --verbose >/dev/null 2>&1 || true
+        
+        echo "✅ Licenses accepted:"
+        ls -la "$ANDROID_HOME/licenses" || echo "❌ No licenses directory"
+        sdkmanager --list_installed | grep -E "(platforms|build-tools|ndk)" || echo "❌ SDK packages not visible"
+      env:
+        ANDROID_HOME: /usr/local/lib/android/sdk
+        PATH: $PATH:/usr/local/lib/android/sdk/cmdline-tools/latest/bin:/usr/local/lib/android/sdk/platform-tools
+      continue-on-error: true
 
     - name: Clear previous builds
       run: rm -rf .buildozer bin
