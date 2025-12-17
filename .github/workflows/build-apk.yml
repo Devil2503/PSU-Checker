@@ -58,7 +58,11 @@ jobs:
     - name: Accept Android licenses
       run: |
         yes | sdkmanager --licenses || true
-
+    - name: Debug dependencies
+      run: |
+        buildozer android list_libs
+        buildozer android adb -- logcat | grep python
+   
     - name: Build APK
       run: |
         buildozer -v android debug
