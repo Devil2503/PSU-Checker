@@ -71,57 +71,97 @@ jobs:
         ANDROID_HOME: /usr/local/lib/android/sdk
         PATH: $PATH:/usr/local/lib/android/sdk/cmdline-tools/latest/bin:/usr/local/lib/android/sdk/platform-tools
 
+
     - name: Clear previous builds
-      run: rm -rf .buildozer bin
-
-    - name: Debug environment
       run: |
-        echo "Python version: $(python3 --version)"
-        echo "Cython version: $(cython --version)"
-        echo "Buildozer version: $(buildozer --version)"
-        echo "Android SDK path: $ANDROID_HOME"
-        sdkmanager --list_installed
+        rm -rf .buildozer bin
+        mkdir -p bin
 
-    - name: Build APK
+    - name: Build APK with detailed logging
       id: build_apk
       run: |
+        echo "=== Starting Buildozer with verbose logging ==="
         buildozer -v android debug
-      continue-on-error: true  # Продолжить даже при ошибках
-   
-    - name: Find APK file location
-      id: find_apk
-      run: |
-        echo "🔍 Searching for APK files..."
-        APK_PATH=$(find . -name "*.apk" -type f 2>/dev/null | head -1)
+        echo "=== Buildozer finished with exit code $? ==="
         
-        if [ -z "$APK_PATH" ]; then
-          echo "❌ No APK file found!"
-          echo "📋 Directory structure:"
-          find . -maxdepth 3 -type d
-          echo "📦 Files in bin directory:"
-          ls -la bin/ 2>/dev/null || echo "bin/ directory not found"
-          echo "🏗️ Buildozer output directory:"
-          ls -la .buildozer/android/platform/ 2>/dev/null || echo "No buildozer platform directory"
-          exit 1
-        else
-          echo "✅ Found APK at: $APK_PATH"
-          echo "APK_PATH=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "APK_NAME=$(basename "$APK_PATH")" >> $GITHUB_OUTPUT
-          echo "APK_DIR=$(dirname "$APK_PATH")" >> $GITHUB_OUTPUT
-        fi
+        echo "=== Checking for APK files after build ==="
+        find . -name "*.apk" -type f -exec ls -la {} \;
+        echo "=== Contents of bin directory ==="
+        ls -la bin/ || echo "bin/ directory is empty or missing"
+        echo "=== Buildozer dist directory ==="
+        ls -la .buildozer/android/platform/build-*-*/dists/ 2>/dev/null || echo "No dist directory found"
+      continue-on-error: true
 
-    - name: Upload APK artifact (forced)
+    - name: Save build logs for debugging
       uses: actions/upload-artifact@v4
       with:
-        name: psuchecker-apk-${{ github.run_number }}
+        name: build-logs-${{ github.run_number }}
+        path: |
+          .buildozer/
+          .buildozer/android/platform/python-for-android/*.log
+          .buildozer/android/platform/python-for-android/build/bootstrap_builds/
+          .buildozer/android/platform/build-*-*/other_builds/
+        retention-days: 7
+      if: always()
+
+    - name: Comprehensive APK search
+      id: find_apk
+      run: |
+        echo "🔍 COMPREHENSIVE APK SEARCH"
+        FOUND=0
+        
+        APK_PATH=$(find . -name "*.apk" -type f 2>/dev/null | head -1)
+        if [ -n "$APK_PATH" ]; then
+          FOUND=1
+          echo "✅ FOUND in standard search: $APK_PATH"
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_OUTPUT
+        fi
+        
+        declare -a APK_PATHS=(
+          "bin/*.apk"
+          ".buildozer/android/platform/build-*-*/dists/*/*.apk"
+          ".buildozer/android/platform/build-*-*/dists/*/bin/*.apk"
+          ".buildozer/android/app/build/outputs/apk/debug/*.apk"
+          ".buildozer/android/app/build/outputs/apk/*.apk"
+          ".buildozer/android/platform/python-for-android/dist/*.apk"
+        )
+        
+        for path in "${APK_PATHS[@]}"; do
+          if [ -n "$(ls -1 $path 2>/dev/null)" ]; then
+            FOUND=1
+            APK_PATH=$(ls -1 $path | head -1)
+            echo "✅ FOUND in explicit path: $APK_PATH"
+            echo "APK_PATH=$APK_PATH" >> $GITHUB_OUTPUT
+            break
+          fi
+        done
+        
+        if [ $FOUND -eq 0 ]; then
+          echo "❌ NO APK FILE FOUND AFTER BUILD"
+          echo "📋 CRITICAL DIAGNOSTICS:"
+          
+          if [ -d ".buildozer/android/platform/python-for-android" ]; then
+            echo "🏗️ Python-for-android status:"
+            ls -la .buildozer/android/platform/python-for-android/ | grep -E "(dist|build|bin)"
+            
+            echo "📝 Last 50 lines of build log:"
+            tail -50 .buildozer/android/platform/build-*-*/other_builds/bootstrap_builds/sdl2-python3/armeabi-v7a/logs/build.txt 2>/dev/null || echo "No build logs found"
+          fi
+          
+          echo "🔧 Android SDK/NDK status:"
+          sdkmanager --list_installed | grep -E "(ndk|platforms;android|build-tools)" || echo "SDK manager not available"
+          
+          exit 1
+        else
+          echo "✅ Final APK path: $APK_PATH"
+          echo "APK_NAME=$(basename "$APK_PATH")" >> $GITHUB_OUTPUT
+        fi
+
+
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: psuchecker-final-apk-${{ github.run_number }}
         path: ${{ steps.find_apk.outputs.APK_PATH }}
         retention-days: 30
-      if: always() 
-
-    - name: Build summary
-      run: |
-        echo "## 📦 APK Build Summary" >> $GITHUB_STEP_SUMMARY
-        echo "**Status:** ${{ steps.build_apk.outcome }}" >> $GITHUB_STEP_SUMMARY
-        echo "**APK Location:** ${{ steps.find_apk.outputs.APK_PATH }}" >> $GITHUB_STEP_SUMMARY
-        echo "**Download:** [psuchecker-apk.zip](../artifacts/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
       if: always()
