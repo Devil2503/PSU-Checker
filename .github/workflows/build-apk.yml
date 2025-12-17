@@ -97,10 +97,22 @@ jobs:
           bin/
         retention-days: 7
 
+    - name: Debug build directory structure
+      run: |
+        echo "=== Contents of bin directory ==="
+        ls -la bin/
+        echo "=== Contents of .buildozer directory ==="
+        find .buildozer -name "*.apk" 2>/dev/null || echo "No APK files found in .buildozer"
+        echo "=== APK files in entire project ==="
+        find . -name "*.apk" -exec ls -la {} \;
+
     - name: Upload APK artifact
       if: steps.build_apk.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
         name: psuchecker-apk
-        path: bin/*.apk
+        path: |
+          bin/*.apk
+          .buildozer/android/platform/build-*-*/dists/*/bin/*.apk
+          .buildozer/android/app/build/outputs/apk/debug/*.apk
         retention-days: 30
