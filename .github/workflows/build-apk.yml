@@ -50,7 +50,7 @@ jobs:
         path: ~/.buildozer
         key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
 
-        - name: Setup Android SDK
+    - name: Setup Android SDK
       uses: android-actions/setup-android@v3
       with:
         packages: |
